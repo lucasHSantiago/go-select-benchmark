@@ -12,3 +12,10 @@ migratedown:
 .PHONY: new_migration
 new_migration:
 	migrate create -ext sql -dir migration -seq $(name)
+
+# ==============================================================================
+# Test
+
+.PHONY: benchmark
+benchmark:
+	go test -bench=. -benchmem -benchtime=10s | prettybenchmarks ms
