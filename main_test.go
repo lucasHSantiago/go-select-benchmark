@@ -11,6 +11,9 @@ import (
 	_ "github.com/lib/pq"
 	"github.com/lucasHSantiago/go-select-benchmark/.gen/order/public/model"
 	. "github.com/lucasHSantiago/go-select-benchmark/.gen/order/public/table"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
 )
 
 var db *sql.DB
@@ -49,7 +52,7 @@ func BenchmarkJet(b *testing.B) {
 
 	for range b.N {
 		dest := make(dest, 0, 50000)
-		err := stmt.Query(db, &dest)
+		err := stmt.QueryContext(b.Context(), db, &dest)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
 		}
@@ -74,9 +77,11 @@ func BenchmarkJetOneResult(b *testing.B) {
 	).FROM(
 		Orders.
 			INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
+	).WHERE(
+		Orders.ID.EQ(Int32(1)),
 	).ORDER_BY(
 		Orders.ID.ASC(),
-	).LIMIT(5)
+	)
 
 	type dest struct {
 		model.Orders
@@ -87,7 +92,7 @@ func BenchmarkJetOneResult(b *testing.B) {
 
 	for range b.N {
 		dest := dest{}
-		err := stmt.Query(db, &dest)
+		err := stmt.QueryContext(b.Context(), db, &dest)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
 		}
@@ -208,8 +213,8 @@ func BenchmarkSqlxOneResult(b *testing.B) {
 		order_items.quantity AS "order_items.quantity"
 	FROM public.orders
 		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
-	ORDER BY orders.id ASC
-	LIMIT 5;
+	WHERE orders.id = 1
+	ORDER BY orders.id ASC;
 	`
 
 	for range b.N {
@@ -329,8 +334,8 @@ func BenchmarkCartaOneResult(b *testing.B) {
 		order_items.quantity AS "order_items.quantity"
 	FROM public.orders
 		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
-	ORDER BY orders.id ASC
-	LIMIT 5;
+	WHERE orders.id = 1
+	ORDER BY orders.id ASC;
 	`
 
 	for range b.N {
@@ -343,6 +348,64 @@ func BenchmarkCartaOneResult(b *testing.B) {
 		err = carta.Map(rows, &order)
 		if err != nil {
 			b.Fatalf("mapping failed: %v", err)
+		}
+
+		if len(order.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(order.Itens))
+		}
+	}
+}
+
+func BenchmarkGorm(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	gormDB, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  "host=localhost port=5432 user=postgres password=admin dbname=order sslmode=disable",
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		b.Fatalf("failed to initialize GORM: %v", err)
+	}
+
+	for range b.N {
+		var orders []OrderWithItems
+		err := gormDB.Preload("Itens").Find(&orders).Error
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		if len(orders) != 50000 {
+			b.Fatalf("expected 50000 results, got %d", len(orders))
+		}
+
+		if len(orders[0].Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(orders[0].Itens))
+		}
+	}
+}
+
+func BenchmarkGormOneResult(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	gormDB, err := gorm.Open(postgres.New(postgres.Config{
+		DSN:                  "host=localhost port=5432 user=postgres password=admin dbname=order sslmode=disable",
+		PreferSimpleProtocol: true,
+	}), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
+		b.Fatalf("failed to initialize GORM: %v", err)
+	}
+
+	for i := 0; i < b.N; i++ {
+		var order OrderWithItems
+		err := gormDB.Preload("Itens").First(&order, "id = ?", 1).Error
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
 		}
 
 		if len(order.Itens) != 5 {
