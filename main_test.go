@@ -413,3 +413,143 @@ func BenchmarkGormOneResult(b *testing.B) {
 		}
 	}
 }
+
+func BenchmarkPq(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	query := `
+		SELECT orders.id AS "orders.id",
+			orders.customer_name AS "orders.customer_name",
+			orders.created_at AS "orders.created_at",
+			order_items.id AS "order_items.id",
+			order_items.order_id AS "order_items.order_id",
+			order_items.product_name AS "order_items.product_name",
+			order_items.price AS "order_items.price",
+			order_items.quantity AS "order_items.quantity"
+		FROM public.orders
+			INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+		ORDER BY orders.id ASC;
+	`
+
+	type OrderWithItems struct {
+		model.Orders
+		Itens []model.OrderItems
+	}
+
+	for range b.N {
+		rows, err := db.Query(query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+		defer rows.Close()
+
+		var orders []OrderWithItems
+		orderIdx := make(map[int32]int)
+		for rows.Next() {
+			var row struct {
+				ID           int32
+				CustomerName string
+				CreatedAt    *time.Time
+				OrderItemID  int32
+				OrderID      *int32
+				ProductName  string
+				Price        float64
+				Quantity     *int32
+			}
+			if err := rows.Scan(&row.ID, &row.CustomerName, &row.CreatedAt, &row.OrderItemID, &row.OrderID, &row.ProductName, &row.Price, &row.Quantity); err != nil {
+				b.Fatalf("row scan failed: %v", err)
+			}
+
+			idx, ok := orderIdx[row.ID]
+			if !ok {
+				orders = append(orders, OrderWithItems{
+					Orders: model.Orders{
+						ID:           row.ID,
+						CustomerName: row.CustomerName,
+						CreatedAt:    row.CreatedAt,
+					},
+				})
+				idx = len(orders) - 1
+				orderIdx[row.ID] = idx
+			}
+			orders[idx].Itens = append(orders[idx].Itens, model.OrderItems{
+				ID:          row.OrderItemID,
+				OrderID:     row.OrderID,
+				ProductName: row.ProductName,
+				Price:       row.Price,
+				Quantity:    row.Quantity,
+			})
+		}
+
+		if len(orders) != 50000 {
+			b.Fatalf("expected 50000 results, got %d", len(orders))
+		}
+
+		if len(orders[0].Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(orders[0].Itens))
+		}
+	}
+}
+
+func BenchmarkPqOneResult(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	query := `
+		SELECT orders.id AS "orders.id",
+			orders.customer_name AS "orders.customer_name",
+			orders.created_at AS "orders.created_at",
+			order_items.id AS "order_items.id",
+			order_items.order_id AS "order_items.order_id",
+			order_items.product_name AS "order_items.product_name",
+			order_items.price AS "order_items.price",
+			order_items.quantity AS "order_items.quantity"
+		FROM public.orders
+			INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+		WHERE orders.id = 1
+		ORDER BY orders.id ASC;
+	`
+
+	type OrderWithItems struct {
+		model.Orders
+		Itens []model.OrderItems
+	}
+
+	for range b.N {
+		rows, err := db.Query(query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+		defer rows.Close()
+
+		var order OrderWithItems
+		for rows.Next() {
+			var row struct {
+				ID           int32
+				CustomerName string
+				CreatedAt    *time.Time
+				OrderItemID  int32
+				OrderID      *int32
+				ProductName  string
+				Price        float64
+				Quantity     *int32
+			}
+			if err := rows.Scan(&row.ID, &row.CustomerName, &row.CreatedAt, &row.OrderItemID, &row.OrderID, &row.ProductName, &row.Price, &row.Quantity); err != nil {
+				b.Fatalf("row scan failed: %v", err)
+			}
+
+			order.Itens = append(order.Itens, model.OrderItems{
+				ID:          row.OrderItemID,
+				OrderID:     row.OrderID,
+				ProductName: row.ProductName,
+				Price:       row.Price,
+				Quantity:    row.Quantity,
+			})
+		}
+
+		if len(order.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(order.Itens))
+		}
+	}
+}
