@@ -6,6 +6,7 @@ import (
 	"time"
 
 	. "github.com/go-jet/jet/v2/postgres"
+	"github.com/jackskj/carta"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/lib/pq"
 	"github.com/lucasHSantiago/go-select-benchmark/.gen/order/public/model"
@@ -31,22 +32,23 @@ func BenchmarkJet(b *testing.B) {
 	setup(b)
 	defer shutdown()
 
-	for range b.N {
-		stmt := SELECT(
-			Orders.AllColumns,
-			OrderItems.AllColumns,
-		).FROM(
-			Orders.
-				INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
-		).ORDER_BY(Orders.ID.ASC())
+	stmt := SELECT(
+		Orders.AllColumns,
+		OrderItems.AllColumns,
+	).FROM(
+		Orders.
+			INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
+	).ORDER_BY(Orders.ID.ASC())
 
-		var dest []struct {
-			model.Orders
-			Itens []struct {
-				model.OrderItems
-			}
+	type dest []struct {
+		model.Orders
+		Itens []struct {
+			model.OrderItems
 		}
+	}
 
+	for range b.N {
+		dest := make(dest, 0, 50000)
 		err := stmt.Query(db, &dest)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
@@ -66,24 +68,25 @@ func BenchmarkJetOneResult(b *testing.B) {
 	setup(b)
 	defer shutdown()
 
-	for range b.N {
-		stmt := SELECT(
-			Orders.AllColumns,
-			OrderItems.AllColumns,
-		).FROM(
-			Orders.
-				INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
-		).ORDER_BY(
-			Orders.ID.ASC(),
-		).LIMIT(5)
+	stmt := SELECT(
+		Orders.AllColumns,
+		OrderItems.AllColumns,
+	).FROM(
+		Orders.
+			INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
+	).ORDER_BY(
+		Orders.ID.ASC(),
+	).LIMIT(5)
 
-		var dest struct {
-			model.Orders
-			Itens []struct {
-				model.OrderItems
-			}
+	type dest struct {
+		model.Orders
+		Itens []struct {
+			model.OrderItems
 		}
+	}
 
+	for range b.N {
+		dest := dest{}
 		err := stmt.Query(db, &dest)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
@@ -106,31 +109,33 @@ func BenchmarkSqlx(b *testing.B) {
 		Itens []model.OrderItems
 	}
 
-	for i := 0; i < b.N; i++ {
-		var results []struct {
-			ID           int32      `db:"orders.id"`
-			CustomerName string     `db:"orders.customer_name"`
-			CreatedAt    *time.Time `db:"orders.created_at"`
-			OrderItemID  int32      `db:"order_items.id"`
-			OrderID      *int32     `db:"order_items.order_id"`
-			ProductName  string     `db:"order_items.product_name"`
-			Price        float64    `db:"order_items.price"`
-			Quantity     *int32     `db:"order_items.quantity"`
-		}
+	type results []struct {
+		ID           int32      `db:"orders.id"`
+		CustomerName string     `db:"orders.customer_name"`
+		CreatedAt    *time.Time `db:"orders.created_at"`
+		OrderItemID  int32      `db:"order_items.id"`
+		OrderID      *int32     `db:"order_items.order_id"`
+		ProductName  string     `db:"order_items.product_name"`
+		Price        float64    `db:"order_items.price"`
+		Quantity     *int32     `db:"order_items.quantity"`
+	}
 
-		query := `
-		SELECT orders.id AS "orders.id",
-			orders.customer_name AS "orders.customer_name",
-			orders.created_at AS "orders.created_at",
-			order_items.id AS "order_items.id",
-			order_items.order_id AS "order_items.order_id",
-			order_items.product_name AS "order_items.product_name",
-			order_items.price AS "order_items.price",
-			order_items.quantity AS "order_items.quantity"
-		FROM public.orders
-			INNER JOIN public.order_items ON (orders.id = order_items.order_id)
-		ORDER BY orders.id ASC;
-		`
+	query := `
+	SELECT orders.id AS "orders.id",
+		orders.customer_name AS "orders.customer_name",
+		orders.created_at AS "orders.created_at",
+		order_items.id AS "order_items.id",
+		order_items.order_id AS "order_items.order_id",
+		order_items.product_name AS "order_items.product_name",
+		order_items.price AS "order_items.price",
+		order_items.quantity AS "order_items.quantity"
+	FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+	ORDER BY orders.id ASC;
+	`
+
+	for range b.N {
+		results := make(results, 0, 50000)
 		err := dbx.Select(&results, query)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
@@ -181,32 +186,34 @@ func BenchmarkSqlxOneResult(b *testing.B) {
 		Itens []model.OrderItems
 	}
 
-	for i := 0; i < b.N; i++ {
-		var results []struct {
-			ID           int32      `db:"orders.id"`
-			CustomerName string     `db:"orders.customer_name"`
-			CreatedAt    *time.Time `db:"orders.created_at"`
-			OrderItemID  int32      `db:"order_items.id"`
-			OrderID      *int32     `db:"order_items.order_id"`
-			ProductName  string     `db:"order_items.product_name"`
-			Price        float64    `db:"order_items.price"`
-			Quantity     *int32     `db:"order_items.quantity"`
-		}
+	type results []struct {
+		ID           int32      `db:"orders.id"`
+		CustomerName string     `db:"orders.customer_name"`
+		CreatedAt    *time.Time `db:"orders.created_at"`
+		OrderItemID  int32      `db:"order_items.id"`
+		OrderID      *int32     `db:"order_items.order_id"`
+		ProductName  string     `db:"order_items.product_name"`
+		Price        float64    `db:"order_items.price"`
+		Quantity     *int32     `db:"order_items.quantity"`
+	}
 
-		query := `
-		SELECT orders.id AS "orders.id",
-			orders.customer_name AS "orders.customer_name",
-			orders.created_at AS "orders.created_at",
-			order_items.id AS "order_items.id",
-			order_items.order_id AS "order_items.order_id",
-			order_items.product_name AS "order_items.product_name",
-			order_items.price AS "order_items.price",
-			order_items.quantity AS "order_items.quantity"
-		FROM public.orders
-			INNER JOIN public.order_items ON (orders.id = order_items.order_id)
-		ORDER BY orders.id ASC
-		LIMIT 5;
-		`
+	query := `
+	SELECT orders.id AS "orders.id",
+		orders.customer_name AS "orders.customer_name",
+		orders.created_at AS "orders.created_at",
+		order_items.id AS "order_items.id",
+		order_items.order_id AS "order_items.order_id",
+		order_items.product_name AS "order_items.product_name",
+		order_items.price AS "order_items.price",
+		order_items.quantity AS "order_items.quantity"
+	FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+	ORDER BY orders.id ASC
+	LIMIT 5;
+	`
+
+	for range b.N {
+		results := make(results, 0, 5)
 		err := dbx.Select(&results, query)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
@@ -233,6 +240,109 @@ func BenchmarkSqlxOneResult(b *testing.B) {
 				Price:       row.Price,
 				Quantity:    row.Quantity,
 			})
+		}
+
+		if len(order.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(order.Itens))
+		}
+	}
+}
+
+func BenchmarkCarta(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	type orders []struct {
+		ID           int32      `db:"orders.id"`
+		CustomerName string     `db:"orders.customer_name"`
+		CreatedAt    *time.Time `db:"orders.created_at"`
+		Itens        []struct {
+			OrderItemID int32   `db:"order_items.id"`
+			OrderID     *int32  `db:"order_items.order_id"`
+			ProductName string  `db:"order_items.product_name"`
+			Price       float64 `db:"order_items.price"`
+			Quantity    *int32  `db:"order_items.quantity"`
+		}
+	}
+
+	query := `
+	SELECT orders.id AS "orders.id",
+		orders.customer_name AS "orders.customer_name",
+		orders.created_at AS "orders.created_at",
+		order_items.id AS "order_items.id",
+		order_items.order_id AS "order_items.order_id",
+		order_items.product_name AS "order_items.product_name",
+		order_items.price AS "order_items.price",
+		order_items.quantity AS "order_items.quantity"
+	FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+	ORDER BY orders.id ASC;
+	`
+
+	for range b.N {
+		rows, err := db.Query(query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		orders := make(orders, 0, 50000)
+		err = carta.Map(rows, &orders)
+		if err != nil {
+			b.Fatalf("mapping failed: %v", err)
+		}
+
+		if len(orders) != 50000 {
+			b.Fatalf("expected 50000 results, got %d", len(orders))
+		}
+
+		if len(orders[0].Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(orders[0].Itens))
+		}
+	}
+}
+
+func BenchmarkCartaOneResult(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	type order struct {
+		ID           int32      `db:"orders.id"`
+		CustomerName string     `db:"orders.customer_name"`
+		CreatedAt    *time.Time `db:"orders.created_at"`
+		Itens        []struct {
+			OrderItemID int32   `db:"order_items.id"`
+			OrderID     *int32  `db:"order_items.order_id"`
+			ProductName string  `db:"order_items.product_name"`
+			Price       float64 `db:"order_items.price"`
+			Quantity    *int32  `db:"order_items.quantity"`
+		}
+	}
+
+	query := `
+	SELECT orders.id AS "orders.id",
+		orders.customer_name AS "orders.customer_name",
+		orders.created_at AS "orders.created_at",
+		order_items.id AS "order_items.id",
+		order_items.order_id AS "order_items.order_id",
+		order_items.product_name AS "order_items.product_name",
+		order_items.price AS "order_items.price",
+		order_items.quantity AS "order_items.quantity"
+	FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+	ORDER BY orders.id ASC
+	LIMIT 5;
+	`
+
+	for range b.N {
+		rows, err := db.Query(query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		order := order{}
+		err = carta.Map(rows, &order)
+		if err != nil {
+			b.Fatalf("mapping failed: %v", err)
 		}
 
 		if len(order.Itens) != 5 {
