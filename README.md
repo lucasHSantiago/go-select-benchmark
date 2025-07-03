@@ -4,7 +4,7 @@ This project benchmarks and compares the performance of different Go database li
 
 ## Features
 
-- **Benchmarking**: Uses Go's `testing` package to run performance benchmarks on different Go database libraries (Jet, Sqlx, Carta, GORM) for executing and mapping SQL `SELECT` queries.
+- **Benchmarking**: Uses Go's `testing` package to run performance benchmarks on different Go database libraries (Jet, Sqlx, Carta, GORM, and pq) for executing and mapping SQL `SELECT` queries.
 - **Pretty Output**: Integrates with the [`prettybenchmarks`](https://github.com/florianorben/prettybenchmarks) tool to format benchmark results into readable tables, supporting both standard and memory allocation benchmarks (`-benchmem`).
 - **Docker Support**: Includes a `docker-compose.yaml` for easy setup and reproducibility.
 - **Database Migrations**: Contains a `migration/` directory for managing database schema changes required by the benchmarks.
@@ -35,7 +35,7 @@ This project benchmarks and compares the performance of different Go database li
 
 ## Project Structure
 
-- `main_test.go` — Contains Go benchmark tests for Jet, Sqlx, Carta, and GORM database libraries.
+- `main_test.go` — Contains Go benchmark tests for Jet, Sqlx, Carta, GORM, and pq database libraries.
 - `migration/` — SQL migration scripts for database setup/teardown.
 - `docker-compose.yaml` — Docker Compose configuration for running the project in containers.
 - `makefile` — Common build, test, and utility commands.
