@@ -62,6 +62,39 @@ func BenchmarkJet(b *testing.B) {
 	}
 }
 
+func BenchmarkJetOneResult(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	for range b.N {
+		stmt := SELECT(
+			Orders.AllColumns,
+			OrderItems.AllColumns,
+		).FROM(
+			Orders.
+				INNER_JOIN(OrderItems, Orders.ID.EQ(OrderItems.OrderID)),
+		).ORDER_BY(
+			Orders.ID.ASC(),
+		).LIMIT(5)
+
+		var dest struct {
+			model.Orders
+			Itens []struct {
+				model.OrderItems
+			}
+		}
+
+		err := stmt.Query(db, &dest)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		if len(dest.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(dest.Itens))
+		}
+	}
+}
+
 func BenchmarkSqlx(b *testing.B) {
 	setup(b)
 	defer shutdown()
@@ -133,6 +166,77 @@ func BenchmarkSqlx(b *testing.B) {
 
 		if len(orders[0].Itens) != 5 {
 			b.Fatalf("expected 5 itens, got %d", len(orders[0].Itens))
+		}
+	}
+}
+
+func BenchmarkSqlxOneResult(b *testing.B) {
+	setup(b)
+	defer shutdown()
+
+	dbx := sqlx.NewDb(db, "postgres")
+
+	type OrderWithItems struct {
+		model.Orders
+		Itens []model.OrderItems
+	}
+
+	for i := 0; i < b.N; i++ {
+		var results []struct {
+			ID           int32      `db:"orders.id"`
+			CustomerName string     `db:"orders.customer_name"`
+			CreatedAt    *time.Time `db:"orders.created_at"`
+			OrderItemID  int32      `db:"order_items.id"`
+			OrderID      *int32     `db:"order_items.order_id"`
+			ProductName  string     `db:"order_items.product_name"`
+			Price        float64    `db:"order_items.price"`
+			Quantity     *int32     `db:"order_items.quantity"`
+		}
+
+		query := `
+		SELECT orders.id AS "orders.id",
+			orders.customer_name AS "orders.customer_name",
+			orders.created_at AS "orders.created_at",
+			order_items.id AS "order_items.id",
+			order_items.order_id AS "order_items.order_id",
+			order_items.product_name AS "order_items.product_name",
+			order_items.price AS "order_items.price",
+			order_items.quantity AS "order_items.quantity"
+		FROM public.orders
+			INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+		ORDER BY orders.id ASC
+		LIMIT 5;
+		`
+		err := dbx.Select(&results, query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		var order OrderWithItems
+		orderIdx := make(map[int32]int)
+		for _, row := range results {
+			idx, ok := orderIdx[row.ID]
+			if !ok {
+				order = OrderWithItems{
+					Orders: model.Orders{
+						ID:           row.ID,
+						CustomerName: row.CustomerName,
+						CreatedAt:    row.CreatedAt,
+					},
+				}
+				orderIdx[row.ID] = idx
+			}
+			order.Itens = append(order.Itens, model.OrderItems{
+				ID:          row.OrderItemID,
+				OrderID:     row.OrderID,
+				ProductName: row.ProductName,
+				Price:       row.Price,
+				Quantity:    row.Quantity,
+			})
+		}
+
+		if len(order.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(order.Itens))
 		}
 	}
 }
