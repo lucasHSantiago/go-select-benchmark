@@ -16,8 +16,17 @@ This project benchmarks and compares the performance of different Go database li
    ```sh
    go mod download
    ```
+2. **Run Docker**
+   ```sh
+   docker-compose up -d
+   ```
 
-2. **Run Benchmarks**
+3. **Run Migrations**
+   ```sh
+   make migrateup
+   ```
+
+4. **Run Benchmarks**
    ```sh
    make benchmark
    ```
@@ -27,11 +36,6 @@ This project benchmarks and compares the performance of different Go database li
      ```
    - You can change the time unit (`ms`, `us`, `ns`, `s`) as needed.
 
-3. **Using Docker**
-   - To run the project in a Docker environment:
-     ```sh
-     docker-compose up --build
-     ```
 
 ## Project Structure
 
