@@ -18,4 +18,4 @@ new_migration:
 
 .PHONY: benchmark
 benchmark:
-	go test -bench=. -benchmem -benchtime=10s | prettybenchmarks ms
+	go test -bench=. -benchmem -parallel=1 | prettybenchmarks ms

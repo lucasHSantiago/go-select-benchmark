@@ -2,6 +2,8 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
+	"os"
 	"testing"
 	"time"
 
@@ -18,23 +20,23 @@ import (
 
 var db *sql.DB
 
-func setup(b *testing.B) {
-	connStr := "user=postgres password=admin dbname=order sslmode=disable"
+func TestMain(m *testing.M) {
+	const connStr = "user=postgres password=admin dbname=order sslmode=disable"
 	var err error
+
 	db, err = sql.Open("postgres", connStr)
 	if err != nil {
-		b.Fatalf("failed to open db: %v", err)
+		panic("failed to open db: " + err.Error())
 	}
-}
+	defer db.Close()
 
-func shutdown() {
-	db.Close()
+	db.SetMaxOpenConns(0)
+	db.SetMaxIdleConns(0)
+
+	os.Exit(m.Run())
 }
 
 func BenchmarkJet(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	stmt := SELECT(
 		Orders.AllColumns,
 		OrderItems.AllColumns,
@@ -68,9 +70,6 @@ func BenchmarkJet(b *testing.B) {
 }
 
 func BenchmarkJetOneResult(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	stmt := SELECT(
 		Orders.AllColumns,
 		OrderItems.AllColumns,
@@ -104,9 +103,6 @@ func BenchmarkJetOneResult(b *testing.B) {
 }
 
 func BenchmarkSqlx(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	dbx := sqlx.NewDb(db, "postgres")
 
 	type OrderWithItems struct {
@@ -125,7 +121,7 @@ func BenchmarkSqlx(b *testing.B) {
 		Quantity     *int32     `db:"order_items.quantity"`
 	}
 
-	query := `
+	const query = `
 	SELECT orders.id AS "orders.id",
 		orders.customer_name AS "orders.customer_name",
 		orders.created_at AS "orders.created_at",
@@ -181,9 +177,6 @@ func BenchmarkSqlx(b *testing.B) {
 }
 
 func BenchmarkSqlxOneResult(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	dbx := sqlx.NewDb(db, "postgres")
 
 	type OrderWithItems struct {
@@ -202,7 +195,7 @@ func BenchmarkSqlxOneResult(b *testing.B) {
 		Quantity     *int32     `db:"order_items.quantity"`
 	}
 
-	query := `
+	const query = `
 	SELECT orders.id AS "orders.id",
 		orders.customer_name AS "orders.customer_name",
 		orders.created_at AS "orders.created_at",
@@ -254,9 +247,6 @@ func BenchmarkSqlxOneResult(b *testing.B) {
 }
 
 func BenchmarkCarta(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	type orders []struct {
 		ID           int32      `db:"orders.id"`
 		CustomerName string     `db:"orders.customer_name"`
@@ -270,7 +260,7 @@ func BenchmarkCarta(b *testing.B) {
 		}
 	}
 
-	query := `
+	const query = `
 	SELECT orders.id AS "orders.id",
 		orders.customer_name AS "orders.customer_name",
 		orders.created_at AS "orders.created_at",
@@ -307,9 +297,6 @@ func BenchmarkCarta(b *testing.B) {
 }
 
 func BenchmarkCartaOneResult(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	type order struct {
 		ID           int32      `db:"orders.id"`
 		CustomerName string     `db:"orders.customer_name"`
@@ -323,7 +310,7 @@ func BenchmarkCartaOneResult(b *testing.B) {
 		}
 	}
 
-	query := `
+	const query = `
 	SELECT orders.id AS "orders.id",
 		orders.customer_name AS "orders.customer_name",
 		orders.created_at AS "orders.created_at",
@@ -339,7 +326,7 @@ func BenchmarkCartaOneResult(b *testing.B) {
 	`
 
 	for range b.N {
-		rows, err := db.Query(query)
+		rows, err := db.QueryContext(b.Context(), query)
 		if err != nil {
 			b.Fatalf("query failed: %v", err)
 		}
@@ -357,9 +344,6 @@ func BenchmarkCartaOneResult(b *testing.B) {
 }
 
 func BenchmarkGorm(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	gormDB, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  "host=localhost port=5432 user=postgres password=admin dbname=order sslmode=disable",
 		PreferSimpleProtocol: true,
@@ -388,9 +372,6 @@ func BenchmarkGorm(b *testing.B) {
 }
 
 func BenchmarkGormOneResult(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
 	gormDB, err := gorm.Open(postgres.New(postgres.Config{
 		DSN:                  "host=localhost port=5432 user=postgres password=admin dbname=order sslmode=disable",
 		PreferSimpleProtocol: true,
@@ -415,10 +396,7 @@ func BenchmarkGormOneResult(b *testing.B) {
 }
 
 func BenchmarkPq(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
-	query := `
+	const query = `
 		SELECT orders.id AS "orders.id",
 			orders.customer_name AS "orders.customer_name",
 			orders.created_at AS "orders.created_at",
@@ -493,10 +471,7 @@ func BenchmarkPq(b *testing.B) {
 }
 
 func BenchmarkPqOneResult(b *testing.B) {
-	setup(b)
-	defer shutdown()
-
-	query := `
+	const query = `
 		SELECT orders.id AS "orders.id",
 			orders.customer_name AS "orders.customer_name",
 			orders.created_at AS "orders.created_at",
@@ -546,6 +521,135 @@ func BenchmarkPqOneResult(b *testing.B) {
 				Price:       row.Price,
 				Quantity:    row.Quantity,
 			})
+		}
+
+		if len(order.Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(order.Itens))
+		}
+	}
+}
+
+func BenchmarkPqJsonAgg(b *testing.B) {
+	const query = `
+		SELECT orders.id AS "orders.id",
+			   orders.customer_name AS "orders.customer_name",
+			   orders.created_at AS "orders.created_at",
+			   json_agg(json_build_object(
+				   'id', order_items.id,
+				   'order_id', order_items.order_id,
+				   'product_name', order_items.product_name,
+				   'price', order_items.price,
+				   'quantity', order_items.quantity
+			   )) AS "order_items"
+		FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+		GROUP BY orders.id, orders.customer_name, orders.created_at
+		ORDER BY orders.id ASC;
+	`
+
+	type OrderItem struct {
+		OrderItemID int32   `json:"id"`
+		OrderID     *int32  `json:"order_id"`
+		ProductName string  `json:"product_name"`
+		Price       float64 `json:"price"`
+		Quantity    *int32  `json:"quantity"`
+	}
+
+	type OrderWithItems struct {
+		ID           int32       `db:"orders.id"`
+		CustomerName string      `db:"orders.customer_name"`
+		CreatedAt    *time.Time  `db:"orders.created_at"`
+		Itens        []OrderItem `json:"order_items"`
+	}
+
+	for range b.N {
+		orders := make([]OrderWithItems, 0, 50000)
+		rows, err := db.QueryContext(b.Context(), query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var (
+				id             int32
+				customerName   string
+				createdAt      *time.Time
+				orderItemsJSON []byte
+			)
+			if err := rows.Scan(&id, &customerName, &createdAt, &orderItemsJSON); err != nil {
+				b.Fatalf("row scan failed: %v", err)
+			}
+			var itens []OrderItem
+			if err := json.Unmarshal(orderItemsJSON, &itens); err != nil {
+				b.Fatalf("failed to unmarshal order items: %v", err)
+			}
+			orders = append(orders, OrderWithItems{
+				ID:           id,
+				CustomerName: customerName,
+				CreatedAt:    createdAt,
+				Itens:        itens,
+			})
+		}
+
+		if len(orders) != 50000 {
+			b.Fatalf("expected 50000 results, got %d", len(orders))
+		}
+		if len(orders[0].Itens) != 5 {
+			b.Fatalf("expected 5 itens, got %d", len(orders[0].Itens))
+		}
+	}
+}
+
+func BenchmarkPqJsonAggOneResult(b *testing.B) {
+	const query = `
+		SELECT orders.id AS "orders.id",
+			   orders.customer_name AS "orders.customer_name",
+			   orders.created_at AS "orders.created_at",
+			   json_agg(json_build_object(
+				   'id', order_items.id,
+				   'order_id', order_items.order_id,
+				   'product_name', order_items.product_name,
+				   'price', order_items.price,
+				   'quantity', order_items.quantity
+			   )) AS "order_items"
+		FROM public.orders
+		INNER JOIN public.order_items ON (orders.id = order_items.order_id)
+		WHERE orders.id = 1
+		GROUP BY orders.id, orders.customer_name, orders.created_at
+		ORDER BY orders.id ASC;
+	`
+
+	type OrderItem struct {
+		OrderItemID int32   `json:"id"`
+		OrderID     *int32  `json:"order_id"`
+		ProductName string  `json:"product_name"`
+		Price       float64 `json:"price"`
+		Quantity    *int32  `json:"quantity"`
+	}
+
+	type OrderWithItems struct {
+		ID           int32       `db:"orders.id"`
+		CustomerName string      `db:"orders.customer_name"`
+		CreatedAt    *time.Time  `db:"orders.created_at"`
+		Itens        []OrderItem `json:"order_items"`
+	}
+
+	for range b.N {
+		var order OrderWithItems
+		rows, err := db.QueryContext(b.Context(), query)
+		if err != nil {
+			b.Fatalf("query failed: %v", err)
+		}
+
+		if rows.Next() {
+			var orderItemsJSON []byte
+			if err := rows.Scan(&order.ID, &order.CustomerName, &order.CreatedAt, &orderItemsJSON); err != nil {
+				b.Fatalf("row scan failed: %v", err)
+			}
+			if err := json.Unmarshal(orderItemsJSON, &order.Itens); err != nil {
+				b.Fatalf("failed to unmarshal order items: %v", err)
+			}
 		}
 
 		if len(order.Itens) != 5 {
