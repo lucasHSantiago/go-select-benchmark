@@ -354,6 +354,8 @@ func BenchmarkGorm(b *testing.B) {
 		b.Fatalf("failed to initialize GORM: %v", err)
 	}
 
+	b.ResetTimer()
+
 	for range b.N {
 		var orders []OrderWithItems
 		err := gormDB.Preload("Itens").Find(&orders).Error
@@ -381,6 +383,8 @@ func BenchmarkGormOneResult(b *testing.B) {
 	if err != nil {
 		b.Fatalf("failed to initialize GORM: %v", err)
 	}
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		var order OrderWithItems
